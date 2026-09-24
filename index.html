@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%A5%8A%3C/text%3E%3C/svg%3E">
+<title>스탠딩 스파링 — Phase 0</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div class="tag p1"><span class="dot"></span><b>P1</b><span id="p1src"></span></div>
+  <div id="clock">3:00</div>
+  <div class="tag p2"><b>P2</b><span id="p2src"></span><span class="dot"></span></div>
+</div>
+
+<div id="msg" hidden></div>
+
+<div id="replay" hidden>
+  <div class="rec"><span></span>REPLAY</div>
+  <div id="unseen" hidden>못 봤다</div>
+</div>
+
+<div id="intro">
+  <div class="card">
+    <p class="eyebrow">PHASE 0 · 서서 주먹만</p>
+    <h1>스탠딩 스파링</h1>
+    <p class="lede">기술 목록은 없다. 스틱을 기울인 방향이 곧 주먹의 궤도다. 주먹은 실제 속도로 날아가니까, 보고 막지 말고 상대의 몸을 읽어라. <b>못 본 주먹은 두 배로 들어간다.</b></p>
+    <div class="cols">
+      <table>
+        <caption>게임패드</caption>
+        <tr><th>왼쪽 스틱</th><td>스텝</td></tr>
+        <tr><th>RB</th><td>앞손 (왼손)</td></tr>
+        <tr><th>RT</th><td>뒷손. 깊이 누를수록 체중이 실린다</td></tr>
+        <tr><th>손 버튼 + 오른쪽 스틱</th><td>궤도: 바깥 = 훅, 아래 = 어퍼, 위 = 오버핸드, 중립 = 스트레이트, 그 사이 전부</td></tr>
+        <tr><th>오른쪽 스틱</th><td>슬립 (좌우), 덕킹 (아래), 젖히기 (위)</td></tr>
+        <tr><th>LB + 오른쪽 스틱</th><td>가드 조이기, 가드 위치</td></tr>
+        <tr><th>LT</th><td>자세 낮추기. 낮춘 채 치면 바디</td></tr>
+        <tr><th>X + 손 버튼</th><td>페인트</td></tr>
+      </table>
+      <table>
+        <caption>키보드 · 마우스</caption>
+        <tr><th>WASD</th><td>스텝</td></tr>
+        <tr><th>좌클릭 / 우클릭</th><td>앞손 / 뒷손</td></tr>
+        <tr><th>마우스 휘두르며 클릭</th><td>궤도: 휘두른 방향이 곧 궤도</td></tr>
+        <tr><th>Shift</th><td>뒷손에 체중 싣기</td></tr>
+        <tr><th>Q / E · R · F</th><td>슬립 좌/우 · 덕킹 · 젖히기</td></tr>
+        <tr><th>Space (+ 마우스)</th><td>가드 조이기 (가드 위치)</td></tr>
+        <tr><th>C</th><td>자세 낮추기. 낮춘 채 치면 바디</td></tr>
+        <tr><th>V + 클릭</th><td>페인트</td></tr>
+      </table>
+    </div>
+    <p class="meta">P1 = 키보드·마우스 또는 첫 번째 패드 · P2 = 두 번째 패드, 없으면 스파링 봇 · <kbd>B</kbd> P2 바꾸기 · <kbd>`</kbd> 디버그 · <kbd>T</kbd> 궤도 표시</p>
+    <p class="start">Enter · 클릭 · 패드 아무 버튼 → 시작</p>
+  </div>
+</div>
+
+<div id="end" hidden>
+  <div class="card">
+    <p class="eyebrow" id="endHow"></p>
+    <h1 id="endTitle"></h1>
+    <table id="endStats" class="stats"></table>
+    <p class="start">Enter · 패드 아무 버튼 → 다시</p>
+  </div>
+</div>
+
+<div id="debug" hidden>
+  <div class="dbghead"><b>디버그</b><span>` 로 닫기</span></div>
+  <div id="dbgStats"></div>
+  <div class="dbgbtns"><button id="trailBtn" type="button">궤도 표시</button><button id="dlLog" type="button">로그 저장</button></div>
+  <div id="tunables"></div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

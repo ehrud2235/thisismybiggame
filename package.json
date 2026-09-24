@@ -1,0 +1,9 @@
+{
+  "name": "thisismybiggame",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "test": "node tools/simtest.mjs 30"
+  }
+}
