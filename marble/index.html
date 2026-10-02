@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>구슬치기</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%2214%22 fill=%22%233a7be0%22/%3E%3Cpath d=%22M4 17c6-7 12 4 24-3%22 stroke=%22%23ff8a3d%22 stroke-width=%223%22 fill=%22none%22/%3E%3Ccircle cx=%2211%22 cy=%2210%22 r=%223%22 fill=%22%23fff%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu:wght@700&family=IBM+Plex+Sans+KR:wght@400;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="c" aria-label="구슬판. 아무 데나 누르고 뒤로 당겼다 놓으면 구슬이 날아간다"></canvas>
+
+<header id="hud">
+  <div class="stage">
+    <p class="eyebrow" id="stageNo">STAGE 1</p>
+    <h1 id="stageName">첫 판</h1>
+    <p class="rule" id="rule"></p>
+  </div>
+  <div class="right">
+    <div class="ammo-box"><span id="ammoLabel">남은 구슬</span><span id="ammo" class="ammo"></span></div>
+    <div class="btns">
+      <button class="btn" id="retryBtn" type="button">다시 <kbd>R</kbd></button>
+      <button class="btn" id="tuneBtn" type="button" aria-pressed="false">튜닝 <kbd>`</kbd></button>
+      <button class="btn" id="soundBtn" type="button" aria-pressed="true">소리 켜짐</button>
+    </div>
+  </div>
+</header>
+
+<p id="hint"></p>
+
+<div id="result" hidden>
+  <div class="card" role="dialog" aria-labelledby="resTitle">
+    <p class="eyebrow" id="resEyebrow"></p>
+    <h2 id="resTitle"></h2>
+    <ul class="checks" id="resChecks"></ul>
+    <p class="note" id="resNote"></p>
+    <div class="actions">
+      <button class="btn primary" id="againBtn" type="button">다시 하기</button>
+      <button class="btn" id="nextBtn" type="button" disabled>다음 스테이지 · 준비 중</button>
+    </div>
+  </div>
+</div>
+
+<aside id="debug" hidden>
+  <div class="dbghead"><b>물리 튜닝</b><button class="btn small" id="resetTune" type="button">기본값</button></div>
+  <div id="dbgStats" class="fs"></div>
+  <div id="tunables"></div>
+  <p class="dbgnote">값은 바로 적용된다. 마음에 드는 값은 <code>marble/src/config.js</code>에 옮겨 적는다.</p>
+</aside>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

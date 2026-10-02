@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node tools/serve.mjs",
-    "test": "node tools/simtest.mjs 30"
+    "test": "node tools/simtest.mjs 30",
+    "test:marble": "node marble/tools/simtest.mjs"
   }
 }
