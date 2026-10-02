@@ -1,94 +1,83 @@
-/* 해 질 녘 흙마당 한 가지 룩으로 고정한다 (라이트/다크 전환 없음).
-   레이아웃: 화면 전체가 구슬판, HUD는 위·아래 띠에 떠 있다 */
+/* 우주에 떠 있는 원목 판. 어두운 한 가지 룩으로 고정한다 (라이트/다크 전환 없음).
+   레이아웃: 화면 전체가 판, 오른쪽 위에 설정·스테이지·남은 구슬, 아래에 짧은 안내 한 줄 */
 :root {
-  --soil: #2a1d13;                      /* 판 바깥 */
-  --chalk: #fbf7ee;                     /* 글자 = 분필 */
-  --chalk-2: #d6c7ad;                   /* 보조 글자 */
-  --panel: rgba(36, 24, 14, 0.84);
-  --line: rgba(251, 247, 238, 0.18);
-  --glass: #3a7be0;                     /* 내 구슬 */
-  --ember: #ff8a3d;                     /* 힘, 강조 */
-  --leaf: #9fdc8f;                      /* 통과 */
-  --font-hand: "Gaegu", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  --font-ui: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --space: #04050b;
+  --ink: #eef1ff;
+  --ink-2: #98a1c4;
+  --glass: rgba(14, 17, 34, 0.7);
+  --line: rgba(200, 210, 255, 0.16);
+  --amber: #ffb347;
+  --blue: #3a7be0;
+  --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-ui: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: var(--soil); color: var(--chalk); font-family: var(--font-ui); }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--space); color: var(--ink); font-family: var(--font-ui); }
 [hidden] { display: none !important; }
 #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
 #c.aiming { cursor: grabbing; }
 
 #hud {
-  position: fixed; top: 0; left: 0; right: 0;
-  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 0;
-  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); right: 16px;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
   pointer-events: none;
 }
-#hud .btns, #hud .btn { pointer-events: auto; }
-.stage { min-width: 0; }
-.eyebrow { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.16em; color: var(--ember); }
-.stage h1 { margin: 0; font-family: var(--font-hand); font-size: 32px; font-weight: 700; line-height: 1; }
-.rule { margin: 4px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--chalk-2); max-width: 60ch; text-wrap: pretty; }
-.right { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
-.ammo-box {
-  display: flex; align-items: center; gap: 8px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px;
-  font-size: 12px; color: var(--chalk-2); font-variant-numeric: tabular-nums;
+.gear {
+  pointer-events: auto; width: 40px; height: 40px; display: grid; place-items: center;
+  background: var(--glass); color: var(--ink); border: 1px solid var(--line); border-radius: 50%;
+  cursor: pointer; backdrop-filter: blur(6px); transition: transform 0.3s;
 }
+.gear:hover { border-color: rgba(200, 210, 255, 0.4); }
+.gear[aria-expanded="true"] { transform: rotate(60deg); border-color: var(--amber); }
+.gear:focus-visible, .btn:focus-visible, .toggle:focus-visible, summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.stage { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: 0.14em; line-height: 1; margin-top: 4px; }
 .ammo { display: flex; gap: 5px; }
-.pip { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 32%, #d4e4ff 0, var(--glass) 45%, #0f2c66 100%); }
-.pip.used { background: none; border: 1.5px dashed var(--line); }
-.btns { display: flex; gap: 6px; }
-.btn {
-  background: var(--panel); color: var(--chalk); border: 1px solid var(--line); border-radius: 8px;
-  padding: 7px 11px; font: 600 13px var(--font-ui); cursor: pointer; white-space: nowrap;
+.pip { width: 12px; height: 12px; border-radius: 50%; background: radial-gradient(circle at 35% 32%, #d6e6ff 0, var(--blue) 45%, #0d2a63 100%); }
+.pip.used { background: none; border: 1.5px solid var(--line); }
+
+#settings {
+  position: fixed; top: calc(62px + env(safe-area-inset-top, 0px)); right: 16px;
+  width: min(300px, calc(100% - 32px)); max-height: calc(100% - 90px); overflow-y: auto;
+  display: grid; gap: 10px; padding: 14px;
+  background: var(--glass); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(10px);
+  font-size: 13px;
 }
-.btn:hover:not(:disabled) { border-color: rgba(251, 247, 238, 0.45); }
-.btn:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn[aria-pressed="true"]#tuneBtn { border-color: var(--ember); }
-.btn.primary { background: var(--ember); color: #2b1405; border-color: transparent; }
-.btn.small { padding: 4px 9px; font-size: 12px; }
-kbd { font: 600 10.5px var(--font-ui); color: var(--chalk-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+.row { display: flex; justify-content: space-between; align-items: center; }
+.btn, .toggle {
+  background: rgba(255, 255, 255, 0.06); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 12px; font: 600 13px var(--font-ui); cursor: pointer;
+}
+.btn:hover, .toggle:hover { border-color: rgba(200, 210, 255, 0.4); }
+.toggle { min-width: 56px; padding: 5px 10px; }
+.toggle[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+.btn.primary { background: var(--amber); color: #2a1503; border-color: transparent; }
+details { border-top: 1px solid var(--line); padding-top: 8px; }
+summary { cursor: pointer; font-weight: 600; color: var(--ink-2); letter-spacing: 0.06em; text-transform: uppercase; font-size: 11.5px; }
+details[open] summary { margin-bottom: 8px; }
+details .btn { width: 100%; margin-top: 8px; }
+.readout { color: var(--ink-2); font-variant-numeric: tabular-nums; margin-bottom: 6px; }
+.readout b { color: var(--ink); }
+.tune { display: grid; grid-template-columns: 96px 1fr 42px; align-items: center; gap: 6px; padding: 2px 0; color: var(--ink-2); font-size: 12px; }
+.tune input { width: 100%; accent-color: var(--amber); }
+.tune output { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
 
 #hint {
   position: fixed; left: 16px; right: 16px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-  margin: 0; text-align: center; font-size: 14px; color: var(--chalk);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); pointer-events: none; text-wrap: balance;
+  margin: 0; text-align: center; pointer-events: none;
+  font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.2em; color: var(--ink-2);
 }
-#hint b { color: var(--ember); font-variant-numeric: tabular-nums; }
+#hint b { color: var(--amber); font-variant-numeric: tabular-nums; font-weight: 700; }
 
-#result { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(20, 12, 6, 0.5); }
-.card { width: min(380px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 18px; backdrop-filter: blur(6px); }
-.card h2 { margin: 6px 0 14px; font-family: var(--font-hand); font-size: 46px; line-height: 1; color: var(--chalk); text-wrap: balance; }
-.card h2.pass { color: var(--leaf); }
-.checks { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
-.checks li { display: grid; grid-template-columns: 24px 1fr; align-items: center; font-size: 14px; color: var(--chalk-2); }
-.checks li::before { content: "☆"; font-size: 18px; color: var(--line); }
-.checks li.on { color: var(--chalk); }
-.checks li.on::before { content: "★"; color: var(--ember); }
-.note { margin: 0 0 18px; font-size: 13px; color: var(--chalk-2); font-variant-numeric: tabular-nums; }
-.actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.actions .btn { flex: 1 1 140px; padding: 10px 12px; }
-
-#debug {
-  position: fixed; right: 16px; top: calc(96px + env(safe-area-inset-top, 0px));
-  width: min(320px, calc(100% - 32px)); max-height: calc(100% - 160px); overflow-y: auto;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; font-size: 12px;
+#result { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(3, 4, 10, 0.5); }
+.card {
+  width: min(300px, 100%); display: grid; justify-items: center; gap: 4px; padding: 26px 22px 20px; text-align: center;
+  background: var(--glass); border: 1px solid var(--line); border-radius: 16px; backdrop-filter: blur(10px);
 }
-.dbghead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.fs { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 6px 0; margin-bottom: 6px; line-height: 1.6; color: var(--chalk-2); font-variant-numeric: tabular-nums; }
-.fs b { color: var(--chalk); }
-.tune { display: grid; grid-template-columns: 92px 1fr 46px; align-items: center; gap: 6px; padding: 3px 0; color: var(--chalk-2); }
-.tune input { width: 100%; accent-color: var(--ember); }
-.tune output { text-align: right; font-variant-numeric: tabular-nums; color: var(--chalk); }
-.dbgnote { margin: 8px 0 0; color: var(--chalk-2); line-height: 1.5; }
-.dbgnote code { color: var(--chalk); }
-
-@media (max-width: 640px) {
-  .stage h1 { font-size: 26px; }
-  .rule { font-size: 12px; }
-  .btn { padding: 6px 9px; font-size: 12px; }
-  kbd { display: none; }
-}
+.eyebrow { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.2em; color: var(--ink-2); }
+.card h2 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 46px; letter-spacing: 0.04em; line-height: 1.05; overflow-wrap: anywhere; }
+.stars { display: flex; gap: 6px; margin: 6px 0 2px; }
+.star { width: 30px; height: 30px; color: rgba(200, 210, 255, 0.18); }
+.star.on { color: var(--amber); }
+.note { margin: 0 0 14px; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.card .btn { width: 100%; padding: 11px 12px; font-size: 14px; letter-spacing: 0.04em; }

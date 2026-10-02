@@ -44,11 +44,12 @@ const res = await page.evaluate(() => ({ phase: window.__game.world.phase, resul
 console.log('통과 샷:', JSON.stringify(res));
 await page.screenshot({ path: `${out}/marble-clear.png` });
 
-// 튜닝 패널
+// 설정 패널 (톱니바퀴 → Physics 펼치기)
 await page.keyboard.press('r');
-await page.keyboard.press('`');
+await page.click('#gearBtn');
+await page.click('#physics summary');
 await page.waitForTimeout(300);
-await page.screenshot({ path: `${out}/marble-debug.png` });
+await page.screenshot({ path: `${out}/marble-settings.png` });
 
 // 휴대폰 세로: 판이 90° 돌아가야 한다
 const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });

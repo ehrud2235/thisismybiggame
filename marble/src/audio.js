@@ -64,7 +64,7 @@ export class Sfx {
     this.tone(3800 + v * 500, 0.05, 0.03 + v * 0.08);
   }
 
-  // 판자·말뚝: 낮은 '퉁'
+  // 나무 블록·말뚝: 낮은 '퉁'
   wood(power) {
     if (power < 40 || !this.ready('wood', 0.04)) return;
     const v = Math.min(1, power / 1400);

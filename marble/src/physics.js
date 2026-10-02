@@ -29,7 +29,7 @@ export function createWorld(stage) {
   };
 }
 
-// 판자 네 꼭짓점 (렌더도 같은 걸 쓴다)
+// 블록 네 꼭짓점 (렌더도 같은 걸 쓴다)
 export function plankCorners(p) {
   const a = (p.deg * Math.PI) / 180;
   const ux = Math.cos(a), uy = Math.sin(a);
@@ -170,7 +170,7 @@ function collideMarbles(a, b, events) {
   events.push({ type: 'marble', x: a.x + nx * a.r, y: a.y + ny * a.r, power: -rv, id: a.id, other: b.id });
 }
 
-// 구슬과 분필 원의 관계: 'inside'(완전히 들어감) · 'touch'(걸침) · null
+// 구슬과 목표 원의 관계: 'inside'(완전히 들어감) · 'touch'(걸침) · null
 export function goalContact(world, b = world.player) {
   const g = world.stage.goal;
   const d = Math.hypot(b.x - g.x, b.y - g.y);

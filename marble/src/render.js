@@ -1,46 +1,32 @@
 // 캔버스 2D 렌더링. 시뮬 상태를 받아서 그리기만 한다.
-// 바닥·테두리·판자·분필 원은 한 번만 그려 두고(static layer), 매 프레임 구슬과 효과만 그린다.
-// 세로 화면에서는 판을 90° 돌려서 꽉 채운다.
+// 원목 판(바닥·테두리·블록·말뚝·상감 원)은 한 번만 구워 두고(layer), 매 프레임 구슬과 조준만 그린다.
+// 판 바깥은 우주. 세로 화면에서는 판을 90° 돌려서 꽉 채운다.
 
 import { BOARD } from './stages.js';
 import { plankCorners, goalContact } from './physics.js';
+import { rng, makeFloor, makeWalnut, makeEndGrain, makeSpace } from './wood.js';
 
 const TAU = Math.PI * 2;
-const FRAME = 26;                       // 판 바깥 나무 테두리 두께 (판 좌표)
-const HUD_TOP = 78, HUD_BOTTOM = 48, SIDE = 16; // HUD가 차지하는 화면 여백 (CSS px)
-
-const C = {
-  outside: '#2a1d13',
-  dirt: '#b48e64', dirtDark: '#9a754d', dirtLight: '#caa77e',
-  pebble: ['#8b7f70', '#a5978a', '#7a6c5e'],
-  frame: '#6b4324', frameLight: '#86562f', frameDark: '#432812',
-  plank: '#a46d3d', plankLight: '#c48c55', plankDark: '#5c3619',
-  chalk: 'rgba(250, 247, 238, 0.86)',
-  shadow: 'rgba(48, 26, 8, 0.32)',
-};
+const FRAME = 26;                 // 호두나무 테두리 두께 (판 좌표)
+const MARGIN = 70;                // 판 그림자가 번지는 여백
+const HUD_W = 130;                // 오른쪽 위 HUD 폭 (CSS px). 판과 겹치면 위 여백을 늘린다
+const LIGHT = [-0.6, -0.8];       // 빛은 왼쪽 위에서
 
 const MARBLE = {
-  player: { light: '#cfe1ff', base: '#3a7be0', deep: '#0f2c66', vane: '#ff8a3d' },
-  green: { light: '#d4f5dc', base: '#3fa565', deep: '#0f4527', vane: '#f6f1e2' },
-  amber: { light: '#ffeccb', base: '#e19633', deep: '#6e360a', vane: '#fff6dc' },
+  player: { light: '#d6e6ff', base: '#3a7be0', deep: '#0d2a63', vane: '#ff9b4a', tint: '90, 150, 255' },
+  green: { light: '#d8f7e0', base: '#36a060', deep: '#0d4325', vane: '#f6f1e2', tint: '90, 220, 140' },
+  amber: { light: '#fff0d2', base: '#e0952f', deep: '#6b3409', vane: '#fff6dc', tint: '255, 180, 80' },
 };
-
-// 고정 시드 난수: 바닥 무늬가 새로고침해도 같다
-function rng(seed) {
-  return () => {
-    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+const INK = '38, 22, 10';         // 판 위에 그리는 조준선 색
 
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.layer = null;
+    this.layerK = 0;
     this.layerStage = null;
+    this.space = null;
     this.trails = new Map();
     this.particles = [];
     this.shake = 0;
@@ -56,14 +42,22 @@ export class Renderer {
     this.canvas.width = Math.round(cw * dpr);
     this.canvas.height = Math.round(ch * dpr);
     this.dpr = dpr;
-    const aw = cw - SIDE * 2, ah = ch - HUD_TOP - HUD_BOTTOM;
     const W = BOARD.w + FRAME * 2, H = BOARD.h + FRAME * 2;
-    const land = Math.min(aw / W, ah / H), port = Math.min(aw / H, ah / W);
-    this.rot = port > land * 1.15 ? Math.PI / 2 : 0;
-    this.scale = Math.max(0.05, this.rot ? port : land);
+    const fit = (top, bottom) => {
+      const aw = cw - 32, ah = ch - top - bottom;
+      const land = Math.min(aw / W, ah / H), port = Math.min(aw / H, ah / W);
+      const rot = port > land * 1.15 ? Math.PI / 2 : 0;
+      const scale = Math.max(0.05, rot ? port : land);
+      const side = (cw - (rot ? H : W) * scale) / 2;
+      return { rot, scale, side, cy: top + ah / 2 };
+    };
+    let f = fit(24, 44);
+    if (f.side < HUD_W) f = fit(104, 44);  // 오른쪽 위 HUD와 겹치면 판을 아래로
+    this.rot = f.rot;
+    this.scale = f.scale;
     this.cx = cw / 2;
-    this.cy = HUD_TOP + ah / 2;
-    this.layer = null; // 배율이 바뀌었으니 다시 굽는다
+    this.cy = f.cy;
+    this.space = makeSpace(this.canvas.width, this.canvas.height, dpr);
   }
 
   // 화면에서 끈 벡터(CSS px) → 판 좌표 벡터
@@ -77,27 +71,26 @@ export class Renderer {
     this.particles.length = 0;
   }
 
-  impact(e, kind) {
-    const n = Math.min(10, Math.floor(e.power / 120));
+  impact(e) {
+    const n = Math.min(8, Math.floor(e.power / 140));
     for (let i = 0; i < n; i++) {
-      const a = Math.random() * TAU, sp = 30 + Math.random() * (kind === 'spark' ? 160 : 80);
-      this.particles.push({
-        x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-        life: 0, max: kind === 'spark' ? 0.25 : 0.5 + Math.random() * 0.3,
-        size: kind === 'spark' ? 1.6 : 2.5 + Math.random() * 3, kind,
-      });
+      const a = Math.random() * TAU, sp = 40 + Math.random() * 160;
+      this.particles.push({ x: e.x, y: e.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0, max: 0.22, size: 1.5 });
     }
-    if (!this.reduced && e.power > 500) this.shake = Math.min(6, this.shake + e.power / 400);
+  }
+
+  bump(power) {
+    if (!this.reduced && power > 500) this.shake = Math.min(6, this.shake + power / 400);
   }
 
   draw(world, ui, dt) {
     const { ctx, canvas } = this;
     this.time += dt;
-    if (!this.layer || this.layerStage !== world.stage) this.bake(world.stage);
+    const needK = Math.min(1.75, Math.max(1, this.scale * this.dpr));
+    if (!this.layer || this.layerStage !== world.stage || needK > this.layerK * 1.25) this.bake(world.stage, needK);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = C.outside;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(this.space, 0, 0);
 
     const sh = this.shake;
     this.shake = Math.max(0, sh - dt * 30);
@@ -108,10 +101,11 @@ export class Renderer {
     ctx.scale(this.scale, this.scale);
     ctx.translate(-BOARD.w / 2, -BOARD.h / 2);
 
-    ctx.drawImage(this.layer, -FRAME, -FRAME, BOARD.w + FRAME * 2, BOARD.h + FRAME * 2);
+    const E = FRAME + MARGIN;
+    ctx.drawImage(this.layer, -E, -E, BOARD.w + E * 2, BOARD.h + E * 2);
 
     this.drawGoalState(world);
-    this.drawTrails(world, dt);
+    this.drawTrails(world);
     if (ui.aim && ui.guide) this.drawGuide(world, ui.guide);
     for (const b of world.marbles) this.drawShadow(b);
     for (const b of world.marbles) this.drawMarble(b);
@@ -122,170 +116,140 @@ export class Renderer {
     }
   }
 
-  // ---------- 고정 레이어 ----------
-  bake(stage) {
-    const k = Math.min(2.5, this.scale * this.dpr);
-    const W = BOARD.w + FRAME * 2, H = BOARD.h + FRAME * 2;
+  // ---------- 원목 판 굽기 ----------
+  bake(stage, K) {
+    const { w, h } = BOARD, E = FRAME + MARGIN;
     const cv = document.createElement('canvas');
-    cv.width = Math.ceil(W * k);
-    cv.height = Math.ceil(H * k);
+    cv.width = Math.ceil((w + E * 2) * K);
+    cv.height = Math.ceil((h + E * 2) * K);
     const g = cv.getContext('2d');
-    g.scale(k, k);
-    g.translate(FRAME, FRAME);
+    g.scale(K, K);
+    g.translate(E, E);
     const rand = rng(stage.id * 977 + 13);
+    const walnut = makeWalnut(1100, 44, K, 77);
+    const walnutPat = g.createPattern(walnut, 'repeat');
+    walnutPat.setTransform(new DOMMatrix().scale(1 / K));
 
-    this.bakeFrame(g, rand);
-    this.bakeDirt(g, rand);
-    this.bakeChalk(g, stage, rand);
-    for (const p of stage.walls) this.bakePlank(g, p, rand);
-    for (const p of stage.posts) this.bakePost(g, p);
+    // 판이 우주에 떠 있는 그림자
+    g.save();
+    g.filter = `blur(${28 * K}px)`;
+    g.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    g.beginPath(); g.roundRect(-FRAME + 10, -FRAME + 24, w + FRAME * 2 - 20, h + FRAME * 2, 14); g.fill();
+    g.restore();
+
+    this.bakeFrame(g, walnut, K, rand);
+    g.drawImage(makeFloor(w, h, K, 1234 + stage.id), 0, 0, w, h);
+    this.bakeFloorLight(g);
+    this.bakeInlay(g, stage, walnutPat);
+    for (const p of stage.walls) this.bakeBlock(g, p, walnut, K, rand);
+    stage.posts.forEach((p, i) => this.bakePeg(g, p, K, 300 + i));
 
     this.layer = cv;
+    this.layerK = K;
     this.layerStage = stage;
   }
 
-  bakeFrame(g, rand) {
+  bakeFrame(g, walnut, K, rand) {
     const { w, h } = BOARD, F = FRAME;
-    // 테두리 네 장을 45° 맞춤으로
+    g.save();
+    g.beginPath(); g.roundRect(-F, -F, w + F * 2, h + F * 2, 9); g.clip();
+    // 네 변을 45° 맞춤으로. 각 변의 로컬 좌표: x는 변을 따라, y=0이 바깥 모서리, y=F가 안쪽 모서리
     const sides = [
-      [[-F, -F], [w + F, -F], [w, 0], [0, 0]],
-      [[w + F, -F], [w + F, h + F], [w, h], [w, 0]],
-      [[w + F, h + F], [-F, h + F], [0, h], [w, h]],
-      [[-F, h + F], [-F, -F], [0, 0], [0, h]],
+      { poly: [[-F, -F], [w + F, -F], [w, 0], [0, 0]], tx: -F, ty: -F, rot: 0, len: w + F * 2, lit: true },
+      { poly: [[w + F, -F], [w + F, h + F], [w, h], [w, 0]], tx: w + F, ty: -F, rot: Math.PI / 2, len: h + F * 2, lit: false },
+      { poly: [[w + F, h + F], [-F, h + F], [0, h], [w, h]], tx: w + F, ty: h + F, rot: Math.PI, len: w + F * 2, lit: false },
+      { poly: [[-F, h + F], [-F, -F], [0, 0], [0, h]], tx: -F, ty: h + F, rot: -Math.PI / 2, len: h + F * 2, lit: true },
     ];
-    sides.forEach((pts, i) => {
-      g.beginPath();
-      pts.forEach(([x, y], j) => (j ? g.lineTo(x, y) : g.moveTo(x, y)));
-      g.closePath();
-      const horiz = i % 2 === 0;
-      const grad = horiz
-        ? g.createLinearGradient(0, i === 0 ? -F : h + F, 0, i === 0 ? 0 : h)
-        : g.createLinearGradient(i === 1 ? w + F : -F, 0, i === 1 ? w : 0, 0);
-      grad.addColorStop(0, C.frameDark);
-      grad.addColorStop(0.35, C.frameLight);
-      grad.addColorStop(1, C.frame);
-      g.fillStyle = grad;
-      g.fill();
+    for (const s of sides) {
       g.save();
+      g.beginPath();
+      s.poly.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+      g.closePath();
       g.clip();
-      g.strokeStyle = 'rgba(40, 22, 8, 0.35)';
-      g.lineWidth = 1;
-      for (let n = 0; n < 7; n++) {
-        const t = 4 + rand() * (F - 8);
-        g.beginPath();
-        if (horiz) {
-          const y = i === 0 ? -t : h + t;
-          g.moveTo(-F, y);
-          for (let x = -F; x <= w + F; x += 40) g.lineTo(x, y + (rand() - 0.5) * 2);
-        } else {
-          const x = i === 1 ? w + t : -t;
-          g.moveTo(x, -F);
-          for (let y = -F; y <= h + F; y += 40) g.lineTo(x + (rand() - 0.5) * 2, y);
-        }
-        g.stroke();
-      }
+      g.translate(s.tx, s.ty);
+      g.rotate(s.rot);
+      const sy = rand() * (44 - F);
+      g.drawImage(walnut, 0, sy * K, s.len * K, F * K, 0, 0, s.len, F);
+      // 바깥 모서리: 왼쪽·위 변은 빛을 받고, 오른쪽·아래 변은 어둡다. 안쪽 모서리는 반대
+      const outer = g.createLinearGradient(0, 0, 0, 6);
+      outer.addColorStop(0, s.lit ? 'rgba(255, 236, 205, 0.32)' : 'rgba(0, 0, 0, 0.45)');
+      outer.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      g.fillStyle = outer;
+      g.fillRect(0, 0, s.len, 6);
+      const inner = g.createLinearGradient(0, F, 0, F - 4);
+      inner.addColorStop(0, s.lit ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 236, 205, 0.35)');
+      inner.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      g.fillStyle = inner;
+      g.fillRect(0, F - 4, s.len, 4);
+      const sheen = g.createLinearGradient(0, 0, 0, F);
+      sheen.addColorStop(0.2, 'rgba(255, 255, 255, 0)');
+      sheen.addColorStop(0.45, 'rgba(255, 245, 225, 0.07)');
+      sheen.addColorStop(0.7, 'rgba(255, 255, 255, 0)');
+      g.fillStyle = sheen;
+      g.fillRect(0, 0, s.len, F);
       g.restore();
-      g.strokeStyle = C.frameDark;
-      g.lineWidth = 1.5;
-      g.stroke();
-    });
+    }
+    // 모서리 이음선
+    g.strokeStyle = 'rgba(20, 10, 4, 0.7)';
+    g.lineWidth = 0.9;
+    for (const [x0, y0, x1, y1] of [[-F, -F, 0, 0], [w + F, -F, w, 0], [w + F, h + F, w, h], [-F, h + F, 0, h]]) {
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    }
+    g.restore();
   }
 
-  bakeDirt(g, rand) {
+  bakeFloorLight(g) {
     const { w, h } = BOARD;
     g.save();
-    g.beginPath();
-    g.rect(0, 0, w, h);
-    g.clip();
-    g.fillStyle = C.dirt;
+    g.beginPath(); g.rect(0, 0, w, h); g.clip();
+    // 바니시 광택과 가장자리 어둠
+    const gloss = g.createRadialGradient(w * 0.28, h * 0.22, 0, w * 0.28, h * 0.22, w * 0.75);
+    gloss.addColorStop(0, 'rgba(255, 250, 235, 0.16)');
+    gloss.addColorStop(1, 'rgba(255, 250, 235, 0)');
+    g.fillStyle = gloss;
     g.fillRect(0, 0, w, h);
-    // 얼룩
-    for (let i = 0; i < 26; i++) {
-      const x = rand() * w, y = rand() * h, r = 60 + rand() * 160;
-      const grad = g.createRadialGradient(x, y, 0, x, y, r);
-      const col = rand() < 0.5 ? '154, 117, 77' : '210, 178, 136';
-      grad.addColorStop(0, `rgba(${col}, ${0.18 + rand() * 0.15})`);
-      grad.addColorStop(1, `rgba(${col}, 0)`);
-      g.fillStyle = grad;
-      g.fillRect(x - r, y - r, r * 2, r * 2);
-    }
-    // 흙 알갱이
-    for (let i = 0; i < 5200; i++) {
-      g.fillStyle = rand() < 0.55 ? C.dirtDark : C.dirtLight;
-      g.globalAlpha = 0.25 + rand() * 0.45;
-      const s = 0.8 + rand() * 1.8;
-      g.fillRect(rand() * w, rand() * h, s, s);
-    }
-    g.globalAlpha = 1;
-    // 자갈
-    for (let i = 0; i < 70; i++) {
-      const x = rand() * w, y = rand() * h, rx = 2 + rand() * 4, ry = rx * (0.6 + rand() * 0.4);
-      g.fillStyle = 'rgba(60, 40, 20, 0.25)';
-      g.beginPath(); g.ellipse(x + 1, y + 1.5, rx, ry, rand() * TAU, 0, TAU); g.fill();
-      g.fillStyle = C.pebble[Math.floor(rand() * C.pebble.length)];
-      g.beginPath(); g.ellipse(x, y, rx, ry, rand() * TAU, 0, TAU); g.fill();
-    }
-    // 테두리가 흙에 드리운 그림자
-    const edge = (x0, y0, x1, y1, fx, fy, fw, fh) => {
+    const vig = g.createRadialGradient(w / 2, h / 2, h * 0.45, w / 2, h / 2, w * 0.7);
+    vig.addColorStop(0, 'rgba(70, 35, 10, 0)');
+    vig.addColorStop(1, 'rgba(70, 35, 10, 0.22)');
+    g.fillStyle = vig;
+    g.fillRect(0, 0, w, h);
+    // 테두리가 바닥에 드리운 그림자: 빛이 왼쪽 위라 위·왼쪽이 넓다
+    const edge = (x0, y0, x1, y1, a, rect) => {
       const grad = g.createLinearGradient(x0, y0, x1, y1);
-      grad.addColorStop(0, 'rgba(40, 22, 8, 0.42)');
-      grad.addColorStop(1, 'rgba(40, 22, 8, 0)');
+      grad.addColorStop(0, `rgba(40, 20, 6, ${a})`);
+      grad.addColorStop(1, 'rgba(40, 20, 6, 0)');
       g.fillStyle = grad;
-      g.fillRect(fx, fy, fw, fh);
+      g.fillRect(...rect);
     };
-    edge(0, 0, 0, 22, 0, 0, w, 22);
-    edge(0, 0, 18, 0, 0, 0, 18, h);
-    edge(w, 0, w - 10, 0, w - 10, 0, 10, h);
-    edge(0, h, 0, h - 10, 0, h - 10, w, 10);
+    edge(0, 0, 0, 18, 0.45, [0, 0, w, 18]);
+    edge(0, 0, 14, 0, 0.4, [0, 0, 14, h]);
+    edge(w, 0, w - 5, 0, 0.22, [w - 5, 0, 5, h]);
+    edge(0, h, 0, h - 5, 0.22, [0, h - 5, w, 5]);
     g.restore();
   }
 
-  // 분필 선: 여러 번 겹쳐 그은 흔들리는 원
-  chalkCircle(g, x, y, r, rand, width = 3.2, passes = 3, dash = null) {
-    g.save();
-    g.strokeStyle = C.chalk;
-    g.lineCap = 'round';
-    if (dash) g.setLineDash(dash);
-    for (let p = 0; p < passes; p++) {
-      g.globalAlpha = 0.35 + rand() * 0.35;
-      g.lineWidth = width * (0.6 + rand() * 0.6);
-      const ph = rand() * TAU, wob = 1.2 + rand() * 1.6;
-      g.beginPath();
-      for (let i = 0; i <= 72; i++) {
-        const a = (i / 72) * TAU;
-        const rr = r + Math.sin(a * 3 + ph) * wob + (rand() - 0.5) * 1.2;
-        const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr;
-        i ? g.lineTo(px, py) : g.moveTo(px, py);
-      }
-      g.stroke();
-    }
-    g.restore();
-  }
-
-  bakeChalk(g, stage, rand) {
+  // 목표 원: 호두나무 링 상감. 안쪽 가는 선 안에 구슬 중심이 멈추면 완전 골인
+  bakeInlay(g, stage, walnutPat) {
     const goal = stage.goal;
-    g.save();
-    g.fillStyle = 'rgba(250, 247, 238, 0.07)';
-    g.beginPath(); g.arc(goal.x, goal.y, goal.r, 0, TAU); g.fill();
-    g.restore();
-    this.chalkCircle(g, goal.x, goal.y, goal.r, rand, 3.6, 4);
-    // 이 안쪽에 구슬 중심이 멈추면 '완전 골인'
-    this.chalkCircle(g, goal.x, goal.y, goal.r - stage.marbleR, rand, 1.6, 1, [3, 9]);
-    // 출발 자리
+    const ring = (r, width) => {
+      g.strokeStyle = walnutPat;
+      g.lineWidth = width;
+      g.beginPath(); g.arc(goal.x, goal.y, r, 0, TAU); g.stroke();
+      g.strokeStyle = 'rgba(30, 14, 4, 0.55)';
+      g.lineWidth = 0.7;
+      for (const e of [-width / 2, width / 2]) { g.beginPath(); g.arc(goal.x, goal.y, r + e, 0, TAU); g.stroke(); }
+    };
+    ring(goal.r - 4, 8);
+    ring(goal.r - stage.marbleR, 1.6);
+    g.fillStyle = walnutPat;
+    g.beginPath(); g.arc(goal.x, goal.y, 3.5, 0, TAU); g.fill();
     const s = stage.marbles[0];
-    this.chalkCircle(g, s.x, s.y, stage.marbleR + 9, rand, 2.2, 2);
-    g.save();
-    g.strokeStyle = C.chalk;
-    g.globalAlpha = 0.55;
-    g.lineWidth = 2.4;
-    g.lineCap = 'round';
-    g.beginPath();
-    g.moveTo(s.x - 46, s.y - 60); g.lineTo(s.x - 44 + (rand() - 0.5) * 3, s.y + 60);
-    g.stroke();
-    g.restore();
+    g.strokeStyle = walnutPat;
+    g.lineWidth = 2;
+    g.beginPath(); g.arc(s.x, s.y, stage.marbleR + 7, 0, TAU); g.stroke();
   }
 
-  bakePlank(g, p, rand) {
+  bakeBlock(g, p, walnut, K, rand) {
     const pts = plankCorners(p);
     const path = () => {
       g.beginPath();
@@ -293,58 +257,63 @@ export class Renderer {
       g.closePath();
     };
     g.save();
-    g.translate(4, 6);
-    g.fillStyle = C.shadow;
-    g.filter = 'blur(3px)';
+    g.translate(5, 8);
+    g.filter = `blur(${5 * K}px)`;
+    g.fillStyle = 'rgba(40, 18, 4, 0.5)';
     path(); g.fill();
     g.restore();
 
-    path();
-    const a = (p.deg * Math.PI) / 180, nx = -Math.sin(a), ny = Math.cos(a);
-    const grad = g.createLinearGradient(p.cx - nx * p.thick / 2, p.cy - ny * p.thick / 2, p.cx + nx * p.thick / 2, p.cy + ny * p.thick / 2);
-    grad.addColorStop(0, C.plankLight);
-    grad.addColorStop(0.5, C.plank);
-    grad.addColorStop(1, C.plankDark);
-    g.fillStyle = grad;
-    g.fill();
+    const a = (p.deg * Math.PI) / 180;
     g.save();
-    g.clip();
     g.translate(p.cx, p.cy);
     g.rotate(a);
-    g.strokeStyle = 'rgba(70, 38, 14, 0.4)';
-    g.lineWidth = 0.9;
-    for (let n = 0; n < 5; n++) {
-      const y = -p.thick / 2 + 3 + rand() * (p.thick - 6);
-      g.beginPath();
-      g.moveTo(-p.len / 2, y);
-      for (let x = -p.len / 2; x <= p.len / 2; x += 18) g.lineTo(x, y + (rand() - 0.5) * 1.6);
-      g.stroke();
+    const hl = p.len / 2, ht = p.thick / 2;
+    g.beginPath(); g.roundRect(-hl, -ht, p.len, p.thick, 2.5); g.clip();
+    const sx = rand() * (1100 - p.len), sy = rand() * (44 - p.thick);
+    g.drawImage(walnut, sx * K, sy * K, p.len * K, p.thick * K, -hl, -ht, p.len, p.thick);
+    // 모서리 베벨: 빛을 향한 면은 밝게, 반대 면은 어둡게
+    const edges = [[0, -1, -hl, -ht, p.len, 3], [0, 1, -hl, ht - 3, p.len, 3], [-1, 0, -hl, -ht, 3, p.thick], [1, 0, hl - 3, -ht, 3, p.thick]];
+    for (const [nx, ny, x, y, ew, eh] of edges) {
+      const wx = nx * Math.cos(a) - ny * Math.sin(a), wy = nx * Math.sin(a) + ny * Math.cos(a);
+      const dot = wx * LIGHT[0] + wy * LIGHT[1];
+      const grad = g.createLinearGradient(x + (nx > 0 ? ew : 0), y + (ny > 0 ? eh : 0), x + (nx < 0 ? ew : 0), y + (ny < 0 ? eh : 0));
+      grad.addColorStop(0, dot > 0 ? `rgba(255, 236, 205, ${0.4 * dot})` : `rgba(0, 0, 0, ${-0.55 * dot})`);
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      g.fillStyle = grad;
+      g.fillRect(x, y, ew, eh);
     }
-    g.fillStyle = 'rgba(40, 30, 25, 0.75)';
-    for (const sx of [-1, 1]) { g.beginPath(); g.arc(sx * (p.len / 2 - 9), 0, 1.8, 0, TAU); g.fill(); }
+    const sheen = g.createLinearGradient(0, -ht, 0, ht);
+    sheen.addColorStop(0.3, 'rgba(255, 255, 255, 0)');
+    sheen.addColorStop(0.5, 'rgba(255, 245, 225, 0.08)');
+    sheen.addColorStop(0.7, 'rgba(255, 255, 255, 0)');
+    g.fillStyle = sheen;
+    g.fillRect(-hl, -ht, p.len, p.thick);
     g.restore();
     path();
-    g.strokeStyle = C.plankDark;
-    g.lineWidth = 1.4;
+    g.strokeStyle = 'rgba(25, 12, 4, 0.6)';
+    g.lineWidth = 0.8;
     g.stroke();
   }
 
-  bakePost(g, p) {
+  bakePeg(g, p, K, seed) {
     g.save();
-    g.fillStyle = C.shadow;
-    g.filter = 'blur(3px)';
-    g.beginPath(); g.arc(p.x + 4, p.y + 6, p.r, 0, TAU); g.fill();
+    g.filter = `blur(${4 * K}px)`;
+    g.fillStyle = 'rgba(40, 18, 4, 0.5)';
+    g.beginPath(); g.arc(p.x + 4, p.y + 7, p.r, 0, TAU); g.fill();
     g.restore();
-    const grad = g.createRadialGradient(p.x - p.r * 0.3, p.y - p.r * 0.3, 1, p.x, p.y, p.r);
-    grad.addColorStop(0, C.plankLight);
-    grad.addColorStop(1, C.plank);
-    g.fillStyle = grad;
-    g.beginPath(); g.arc(p.x, p.y, p.r, 0, TAU); g.fill();
-    g.strokeStyle = 'rgba(70, 38, 14, 0.45)';
-    g.lineWidth = 0.9;
-    for (let rr = p.r * 0.3; rr < p.r; rr += p.r * 0.22) { g.beginPath(); g.arc(p.x, p.y, rr, 0, TAU); g.stroke(); }
-    g.strokeStyle = C.plankDark;
-    g.lineWidth = 2;
+    g.save();
+    g.beginPath(); g.arc(p.x, p.y, p.r, 0, TAU); g.clip();
+    g.drawImage(makeEndGrain(p.r, K, seed), p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
+    g.restore();
+    const rim = g.createLinearGradient(p.x - p.r * 0.7, p.y - p.r * 0.7, p.x + p.r * 0.7, p.y + p.r * 0.7);
+    rim.addColorStop(0, 'rgba(255, 236, 205, 0.5)');
+    rim.addColorStop(0.5, 'rgba(255, 236, 205, 0)');
+    rim.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+    g.strokeStyle = rim;
+    g.lineWidth = 2.5;
+    g.beginPath(); g.arc(p.x, p.y, p.r - 1.25, 0, TAU); g.stroke();
+    g.strokeStyle = 'rgba(25, 12, 4, 0.6)';
+    g.lineWidth = 0.8;
     g.beginPath(); g.arc(p.x, p.y, p.r, 0, TAU); g.stroke();
   }
 
@@ -354,25 +323,29 @@ export class Renderer {
     if (!contact) return;
     const { ctx } = this, g = world.stage.goal;
     const pulse = this.reduced ? 0.5 : 0.5 + 0.5 * Math.sin(this.time * 6);
-    ctx.fillStyle = contact === 'inside' ? `rgba(160, 230, 150, ${0.22 + pulse * 0.1})` : `rgba(160, 230, 150, ${0.1 + pulse * 0.08})`;
-    ctx.beginPath(); ctx.arc(g.x, g.y, g.r, 0, TAU); ctx.fill();
+    const a = (contact === 'inside' ? 0.5 : 0.3) + pulse * 0.25;
+    ctx.save();
+    ctx.shadowColor = `rgba(255, 190, 90, ${a})`;
+    ctx.shadowBlur = 18 * this.scale * this.dpr;
+    ctx.strokeStyle = `rgba(255, 200, 110, ${a})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(g.x, g.y, g.r - 4, 0, TAU); ctx.stroke();
+    ctx.restore();
   }
 
-  drawTrails(world, dt) {
+  drawTrails(world) {
     const { ctx } = this;
+    ctx.lineCap = 'round';
     for (const b of world.marbles) {
       let tr = this.trails.get(b.id);
       if (!tr) { tr = []; this.trails.set(b.id, tr); }
-      const sp = Math.hypot(b.vx, b.vy);
-      if (sp > 120) tr.push(b.x, b.y);
+      if (Math.hypot(b.vx, b.vy) > 160) tr.push(b.x, b.y);
       else if (tr.length) tr.splice(0, 2);
-      while (tr.length > 28) tr.splice(0, 2);
-      if (tr.length < 4) continue;
-      ctx.lineCap = 'round';
+      while (tr.length > 20) tr.splice(0, 2);
       for (let i = 2; i < tr.length; i += 2) {
         const t = i / tr.length;
-        ctx.strokeStyle = `rgba(255, 246, 225, ${t * 0.28})`;
-        ctx.lineWidth = b.r * 1.5 * t;
+        ctx.strokeStyle = `rgba(255, 252, 240, ${t * 0.3})`;
+        ctx.lineWidth = b.r * 1.4 * t;
         ctx.beginPath(); ctx.moveTo(tr[i - 2], tr[i - 1]); ctx.lineTo(tr[i], tr[i + 1]); ctx.stroke();
       }
     }
@@ -380,37 +353,45 @@ export class Renderer {
 
   drawGuide(world, pts) {
     const { ctx } = this;
-    // 경로를 따라 14px 간격으로 점을 찍는다. 멀어질수록 흐려진다
     let total = 0;
     for (let i = 2; i < pts.length; i += 2) total += Math.hypot(pts[i] - pts[i - 2], pts[i + 1] - pts[i - 1]);
     if (total < 1) return;
     const gap = 14;
     let next = world.player.r + 8, walked = 0;
-    ctx.fillStyle = '#fffaf0';
     for (let i = 2; i < pts.length; i += 2) {
       const x0 = pts[i - 2], y0 = pts[i - 1], x1 = pts[i], y1 = pts[i + 1];
       const seg = Math.hypot(x1 - x0, y1 - y0);
       while (seg > 0 && next <= walked + seg) {
         const t = (next - walked) / seg;
-        ctx.globalAlpha = 0.85 * (1 - next / (total + gap));
-        ctx.beginPath(); ctx.arc(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, 2.6, 0, TAU); ctx.fill();
+        ctx.fillStyle = `rgba(${INK}, ${0.7 * (1 - next / (total + gap))})`;
+        ctx.beginPath(); ctx.arc(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, 2.4, 0, TAU); ctx.fill();
         next += gap;
       }
       walked += seg;
     }
-    ctx.globalAlpha = 0.35;
-    ctx.strokeStyle = '#fffaf0';
+    ctx.strokeStyle = `rgba(${INK}, 0.35)`;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 4]);
     ctx.beginPath(); ctx.arc(pts[pts.length - 2], pts[pts.length - 1], world.player.r, 0, TAU); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
   }
 
   drawShadow(b) {
     const { ctx } = this;
-    ctx.fillStyle = C.shadow;
-    ctx.beginPath(); ctx.ellipse(b.x + 3, b.y + 5, b.r, b.r * 0.86, 0, 0, TAU); ctx.fill();
+    const col = MARBLE[b.kind] || MARBLE.green;
+    const sx = b.x + 4, sy = b.y + 6;
+    const sh = ctx.createRadialGradient(sx, sy, b.r * 0.2, sx, sy, b.r * 1.25);
+    sh.addColorStop(0, 'rgba(40, 18, 4, 0.5)');
+    sh.addColorStop(1, 'rgba(40, 18, 4, 0)');
+    ctx.fillStyle = sh;
+    ctx.beginPath(); ctx.arc(sx, sy, b.r * 1.25, 0, TAU); ctx.fill();
+    // 유리를 통과한 빛이 그림자 안에 모인다
+    const cx = b.x + 2.5, cy = b.y + 3.5;
+    const ca = ctx.createRadialGradient(cx, cy, 0, cx, cy, b.r * 0.55);
+    ca.addColorStop(0, `rgba(${col.tint}, 0.55)`);
+    ca.addColorStop(1, `rgba(${col.tint}, 0)`);
+    ctx.fillStyle = ca;
+    ctx.beginPath(); ctx.arc(cx, cy, b.r * 0.55, 0, TAU); ctx.fill();
   }
 
   // 유리구슬: 몸통 그라데이션 + 안쪽 무늬(굴러간 거리만큼 돈다) + 고정된 반사광
@@ -426,7 +407,7 @@ export class Renderer {
     ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, TAU); ctx.fill();
 
     ctx.save();
-    ctx.beginPath(); ctx.arc(b.x, b.y, r * 0.92, 0, TAU); ctx.clip();
+    ctx.beginPath(); ctx.arc(b.x, b.y, r * 0.9, 0, TAU); ctx.clip();
     ctx.translate(b.x, b.y);
     ctx.rotate(b.roll / r * 0.5 + b.id * 2.1);
     ctx.fillStyle = col.vane;
@@ -440,13 +421,16 @@ export class Renderer {
     }
     ctx.restore();
 
-    ctx.strokeStyle = 'rgba(10, 10, 30, 0.35)';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(b.x, b.y, r - 0.5, 0, TAU); ctx.stroke();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.beginPath(); ctx.ellipse(b.x - r * 0.36, b.y - r * 0.42, r * 0.3, r * 0.17, -0.6, 0, TAU); ctx.fill();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-    ctx.beginPath(); ctx.arc(b.x + r * 0.4, b.y + r * 0.45, r * 0.12, 0, TAU); ctx.fill();
+    // 가장자리 굴절로 어두운 테
+    const rim = ctx.createRadialGradient(b.x, b.y, r * 0.7, b.x, b.y, r);
+    rim.addColorStop(0, 'rgba(0, 0, 20, 0)');
+    rim.addColorStop(1, 'rgba(0, 0, 20, 0.35)');
+    ctx.fillStyle = rim;
+    ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    ctx.beginPath(); ctx.ellipse(b.x - r * 0.36, b.y - r * 0.42, r * 0.3, r * 0.16, -0.6, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.beginPath(); ctx.arc(b.x + r * 0.42, b.y + r * 0.44, r * 0.13, 0, TAU); ctx.fill();
   }
 
   drawParticles(dt) {
@@ -456,20 +440,19 @@ export class Renderer {
       p.life += dt;
       if (p.life >= p.max) { this.particles.splice(i, 1); continue; }
       p.x += p.vx * dt; p.y += p.vy * dt;
-      p.vx *= 1 - 4 * dt; p.vy *= 1 - 4 * dt;
       const t = 1 - p.life / p.max;
-      ctx.fillStyle = p.kind === 'spark' ? `rgba(255, 252, 240, ${t})` : `rgba(120, 88, 56, ${t * 0.5})`;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (p.kind === 'spark' ? 1 : 1 + (1 - t)), 0, TAU); ctx.fill();
+      ctx.fillStyle = `rgba(255, 252, 240, ${t})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, TAU); ctx.fill();
     }
   }
 
   drawIdle(b) {
     if (this.reduced) return;
     const { ctx } = this;
-    const t = (this.time % 1.4) / 1.4;
-    ctx.strokeStyle = `rgba(255, 250, 240, ${0.6 * (1 - t)})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4 + t * 16, 0, TAU); ctx.stroke();
+    const t = (this.time % 1.6) / 1.6;
+    ctx.strokeStyle = `rgba(${INK}, ${0.45 * (1 - t)})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 5 + t * 14, 0, TAU); ctx.stroke();
   }
 
   drawAim(b, aim) {
@@ -477,19 +460,18 @@ export class Renderer {
     const ux = Math.cos(aim.angle), uy = Math.sin(aim.angle);
     // 고무줄: 쏘는 방향의 반대로 당겨진다
     const pull = b.r + 10 + aim.power * 70;
-    ctx.strokeStyle = 'rgba(255, 250, 240, 0.55)';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(${INK}, 0.45)`;
+    ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(b.x - ux * b.r, b.y - uy * b.r); ctx.lineTo(b.x - ux * pull, b.y - uy * pull); ctx.stroke();
-    ctx.fillStyle = 'rgba(255, 250, 240, 0.8)';
-    ctx.beginPath(); ctx.arc(b.x - ux * pull, b.y - uy * pull, 5, 0, TAU); ctx.fill();
-    // 힘 링: 흰색 → 주황
+    ctx.fillStyle = `rgba(${INK}, 0.6)`;
+    ctx.beginPath(); ctx.arc(b.x - ux * pull, b.y - uy * pull, 4.5, 0, TAU); ctx.fill();
+    // 힘 링: 노랑 → 주황
     const p = aim.power;
-    const rr = Math.round(255), gg = Math.round(240 - 102 * p), bb = Math.round(220 - 159 * p);
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.strokeStyle = `rgba(${INK}, 0.3)`;
     ctx.lineWidth = 5;
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 9, 0, TAU); ctx.stroke();
-    ctx.strokeStyle = `rgb(${rr}, ${gg}, ${bb})`;
+    ctx.strokeStyle = `rgb(255, ${Math.round(196 - 90 * p)}, ${Math.round(80 - 40 * p)})`;
     ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 9, -Math.PI / 2, -Math.PI / 2 + TAU * p); ctx.stroke();
   }

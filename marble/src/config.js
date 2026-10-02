@@ -14,8 +14,8 @@ export const CFG = {
   stopSpeed: 7,          // 이보다 느리면 멈춘 것으로 본다
 
   // 충돌
-  wallRestitution: 0.72, // 판자 반발. 1이면 속도 그대로 튕긴다
-  wallFriction: 0.08,    // 판자에 긁히며 잃는 접선 속도 비율
+  wallRestitution: 0.72, // 벽(테두리·블록) 반발. 1이면 속도 그대로 튕긴다
+  wallFriction: 0.08,    // 벽에 긁히며 잃는 접선 속도 비율
   bounceMin: 24,         // 이보다 느리게 부딪히면 튕기지 않고 미끄러진다
   postRestitution: 0.6,  // 말뚝 반발
   marbleRestitution: 0.93,
@@ -24,16 +24,16 @@ export const CFG = {
   guideTime: 0.45,       // 조준선이 미리 보여주는 시간. 스테이지가 올라가면 줄일 수 있다
 };
 
-// [키, 최소, 최대, 간격, 이름]
+// [키, 최소, 최대, 간격, 화면 이름]
 export const TUNABLES = [
-  ['maxSpeed', 500, 3000, 50, '최대 속도'],
-  ['maxPull', 80, 320, 5, '최대 당김'],
-  ['powerCurve', 0.6, 2.5, 0.05, '힘 곡선'],
-  ['rollDecel', 0, 800, 10, '구름 저항'],
-  ['linearDamp', 0, 2, 0.05, '속도 감쇠'],
-  ['wallRestitution', 0.1, 1, 0.01, '판자 반발'],
-  ['wallFriction', 0, 0.5, 0.01, '판자 마찰'],
-  ['postRestitution', 0.1, 1, 0.01, '말뚝 반발'],
-  ['marbleRestitution', 0.5, 1, 0.01, '구슬끼리 반발'],
-  ['guideTime', 0, 1.5, 0.05, '조준선 길이'],
+  ['maxSpeed', 500, 3000, 50, 'Max speed'],
+  ['maxPull', 80, 320, 5, 'Pull distance'],
+  ['powerCurve', 0.6, 2.5, 0.05, 'Power curve'],
+  ['rollDecel', 0, 800, 10, 'Rolling drag'],
+  ['linearDamp', 0, 2, 0.05, 'Speed damping'],
+  ['wallRestitution', 0.1, 1, 0.01, 'Wall bounce'],
+  ['wallFriction', 0, 0.5, 0.01, 'Wall friction'],
+  ['postRestitution', 0.1, 1, 0.01, 'Peg bounce'],
+  ['marbleRestitution', 0.5, 1, 0.01, 'Marble bounce'],
+  ['guideTime', 0, 1.5, 0.05, 'Aim guide'],
 ];

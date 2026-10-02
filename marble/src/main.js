@@ -1,4 +1,5 @@
-// 게임 루프, 조준 입력, HUD, 결과 카드, 디버그 패널.
+// 게임 루프, 조준 입력, HUD, 결과 카드, 설정 패널.
+// 화면 글자는 해외 플레이어도 읽도록 짧은 영어로 쓴다.
 
 import { CFG, TUNABLES } from './config.js';
 import { STAGES } from './stages.js';
@@ -8,6 +9,8 @@ import { Sfx } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 const DEFAULTS = { ...CFG };
+const MM_PER_PX = 0.57;      // 구슬 지름 16mm 기준 판 좌표 1px의 실제 길이
+const STAR = '<svg class="star{on}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2.5l2.9 6 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.2 1.3-6.6L2.5 9.3l6.6-.8z"/></svg>';
 
 const canvas = $('c');
 const renderer = new Renderer(canvas);
@@ -20,23 +23,16 @@ let acc = 0;
 let last = performance.now();
 let resultAt = 0;            // 결과 카드를 띄울 시각
 let shownShots = -1;
-let showDebug = false;
 
 function restart() {
   world = createWorld(stage);
   aim = null;
   resultAt = 0;
+  shownShots = -1;
   renderer.reset();
   $('result').hidden = true;
   canvas.classList.remove('aiming');
-  renderStage();
-}
-
-function renderStage() {
   $('stageNo').textContent = `STAGE ${stage.id}`;
-  $('stageName').textContent = stage.name;
-  $('rule').textContent = stage.hint;
-  shownShots = -1;
 }
 
 // ---------- 조준 ----------
@@ -50,6 +46,7 @@ function currentAim() {
 
 canvas.addEventListener('pointerdown', (e) => {
   sfx.unlock();
+  if (!$('settings').hidden) { toggleSettings(false); return; }
   if (world.phase !== 'aim' || aim) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   aim = { id: e.pointerId, sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY };
@@ -77,9 +74,9 @@ function cancelAim() {
 
 addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
-  if (e.key === 'Escape') cancelAim();
+  if (e.key === 'Escape') { cancelAim(); toggleSettings(false); }
   else if (e.key === 'r' || e.key === 'R') restart();
-  else if (e.key === '`') toggleDebug();
+  else if (e.key === '`') toggleSettings();
   else if (e.key === 'm' || e.key === 'M') toggleSound();
 });
 
@@ -88,10 +85,10 @@ function handleEvents(events) {
   for (const e of events) {
     if (e.type === 'wall' || e.type === 'post') {
       sfx.wood(e.power);
-      if (e.power > 150) renderer.impact(e, 'dust');
+      renderer.bump(e.power);
     } else if (e.type === 'marble') {
       sfx.glass(e.power);
-      renderer.impact(e, 'spark');
+      renderer.impact(e);
     } else if (e.type === 'rest' && world.result) {
       if (world.phase === 'clear') sfx.clear(world.result.contact === 'inside');
       else sfx.fail();
@@ -102,24 +99,17 @@ function handleEvents(events) {
 
 function showResult() {
   const r = world.result;
-  $('resEyebrow').textContent = `STAGE ${stage.id} · ${stage.name}`;
-  const title = $('resTitle');
-  title.textContent = r.pass ? (r.contact === 'inside' ? '완전 골인!' : '걸쳤다, 통과!') : '아깝다';
-  title.className = r.pass ? 'pass' : '';
-  const checks = [
-    [r.pass, stage.goal.need === 'touch' ? '분필 원에 걸치기' : '분필 원 안에 넣기'],
-    [r.contact === 'inside', '구슬 전체가 원 안에'],
-    [r.pass && r.shots === 1, '한 발에 끝내기'],
-  ];
-  $('resChecks').innerHTML = checks.map(([on, text]) => `<li class="${on ? 'on' : ''}">${text}</li>`).join('');
-  let note;
-  if (r.pass) note = `${stage.shots}발 중 ${r.shots}발 사용`;
+  $('resStage').textContent = `STAGE ${stage.id}`;
+  $('resTitle').textContent = r.pass ? (r.contact === 'inside' ? 'PERFECT' : 'CLEAR') : 'MISSED';
+  const stars = [[r.pass, 'Clear'], [r.contact === 'inside', 'Perfect'], [r.pass && r.shots === 1, 'One shot']];
+  $('resStars').innerHTML = stars.map(([on]) => STAR.replace('{on}', on ? ' on' : '')).join('');
+  $('resStars').setAttribute('aria-label', `${stars.filter(([on]) => on).length} of 3 stars`);
+  if (r.pass) $('resNote').textContent = `${r.shots} / ${stage.shots} shots`;
   else {
     const g = stage.goal, p = world.player;
     const gap = Math.max(0, Math.hypot(p.x - g.x, p.y - g.y) - g.r - p.r);
-    note = `구슬 ${stage.shots}발을 다 썼다. 원까지 ${Math.max(1, Math.round(gap / 5))}cm 모자랐다.`;
+    $('resNote').textContent = `${Math.max(0.1, (gap * MM_PER_PX) / 10).toFixed(1)} cm short`;
   }
-  $('resNote').textContent = note;
   $('result').hidden = false;
   $('againBtn').focus();
 }
@@ -130,17 +120,14 @@ function updateHud() {
   if (left !== shownShots) {
     shownShots = left;
     $('ammo').innerHTML = Array.from({ length: stage.shots }, (_, i) => `<span class="pip${i < left ? '' : ' used'}"></span>`).join('');
-    $('ammoLabel').textContent = `남은 구슬 ${left}`;
+    $('ammo').setAttribute('aria-label', `${left} marbles left`);
   }
   let hint = '';
   if (world.phase === 'aim') {
     const a = currentAim();
-    if (!a) hint = '아무 데나 누르고 <b>뒤로 당겼다 놓기</b> · 당긴 만큼 세게 나간다';
-    else if (a.power < CFG.minPower) hint = '조금 더 당겨야 나간다 · Esc / 우클릭 취소';
-    else hint = `힘 <b>${Math.round(a.power * 100)}%</b> · 놓으면 발사 · Esc / 우클릭 취소`;
-  } else if (world.phase === 'roll') {
-    const c = goalContact(world);
-    hint = c === 'inside' ? '원 안이다, 멈춰라…' : c === 'touch' ? '걸쳤다, 멈춰라…' : '구르는 중…';
+    if (!a) hint = 'PULL &amp; RELEASE';
+    else if (a.power < CFG.minPower) hint = 'PULL MORE';
+    else hint = `RELEASE · <b>${Math.round(a.power * 100)}%</b>`;
   }
   const el = $('hint');
   if (el.innerHTML !== hint) el.innerHTML = hint;
@@ -148,18 +135,17 @@ function updateHud() {
 
 function toggleSound() {
   sfx.muted = !sfx.muted;
-  $('soundBtn').textContent = sfx.muted ? '소리 꺼짐' : '소리 켜짐';
+  $('soundBtn').textContent = sfx.muted ? 'Off' : 'On';
   $('soundBtn').setAttribute('aria-pressed', String(!sfx.muted));
 }
 
-// ---------- 디버그 패널 ----------
-function toggleDebug() {
-  showDebug = !showDebug;
-  $('debug').hidden = !showDebug;
-  $('tuneBtn').setAttribute('aria-pressed', String(showDebug));
+// ---------- 설정 패널 ----------
+function toggleSettings(open = $('settings').hidden) {
+  $('settings').hidden = !open;
+  $('gearBtn').setAttribute('aria-expanded', String(open));
 }
 
-function buildDebug() {
+function buildTunables() {
   const box = $('tunables');
   for (const [key, min, max, step, label] of TUNABLES) {
     const row = document.createElement('label');
@@ -180,19 +166,15 @@ function buildDebug() {
   });
 }
 
-let dbgT = 0;
-function updateDebug(dt) {
-  dbgT -= dt;
-  if (dbgT > 0) return;
-  dbgT = 0.1;
+let readoutT = 0;
+function updateReadout(dt) {
+  readoutT -= dt;
+  if (readoutT > 0) return;
+  readoutT = 0.1;
   const p = world.player;
-  const speed = Math.hypot(p.vx, p.vy);
   const a = currentAim();
   const launch = a ? CFG.maxSpeed * Math.pow(a.power, CFG.powerCurve) : 0;
-  $('dbgStats').innerHTML = `
-    <div>상태 <b>${world.phase}</b> · 쏜 구슬 ${world.shots}/${stage.shots}</div>
-    <div>지금 속도 <b>${speed.toFixed(0)}</b> px/s${a ? ` · 이대로 쏘면 <b>${launch.toFixed(0)}</b> px/s` : ''}</div>
-    <div>분필 원 <b>${goalContact(world) === 'inside' ? '완전히 안' : goalContact(world) === 'touch' ? '걸침' : '밖'}</b> · 위치 ${p.x.toFixed(0)}, ${p.y.toFixed(0)}</div>`;
+  $('dbgStats').innerHTML = `Speed <b>${Math.hypot(p.vx, p.vy).toFixed(0)}</b> px/s${a ? ` · launch <b>${launch.toFixed(0)}</b>` : ''}`;
 }
 
 // ---------- 루프 ----------
@@ -211,15 +193,15 @@ function frame(now) {
   const guide = a && a.power >= CFG.minPower && CFG.guideTime > 0 ? predict(world, a.angle, a.power, CFG.guideTime) : null;
   renderer.draw(world, { aim: a, guide }, dt);
   updateHud();
-  if (showDebug) updateDebug(dt);
+  if ($('physics').open && !$('settings').hidden) updateReadout(dt);
   requestAnimationFrame(frame);
 }
 
-$('retryBtn').addEventListener('click', restart);
+$('gearBtn').addEventListener('click', () => toggleSettings());
+$('retryBtn').addEventListener('click', () => { restart(); toggleSettings(false); });
 $('againBtn').addEventListener('click', restart);
-$('tuneBtn').addEventListener('click', toggleDebug);
 $('soundBtn').addEventListener('click', () => { sfx.unlock(); toggleSound(); });
-buildDebug();
-renderStage();
+buildTunables();
+restart();
 window.__game = { get world() { return world; }, CFG, shoot: (angle, power) => shoot(world, angle, power), restart };
 requestAnimationFrame(frame);

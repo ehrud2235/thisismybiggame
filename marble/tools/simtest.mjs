@@ -1,7 +1,7 @@
 // 스테이지 1을 렌더 없이 수천 번 쏴 보고 숫자가 말이 되는지 본다.
 //   node marble/tools/simtest.mjs [각도 간격(도)]
 // - 결정성: 같은 샷 → 같은 결과
-// - 벽 뚫림: 구슬 중심이 판 밖이나 판자 안으로 들어가면 실패
+// - 벽 뚫림: 구슬 중심이 판 밖이나 블록 안으로 들어가면 실패
 // - 난이도: 한 번에 통과하는 샷이 전체 중 몇 %인가 (스테이지 설계 지표)
 
 import { STAGES, BOARD } from '../src/stages.js';
@@ -32,7 +32,7 @@ function run(angle, power, check) {
       maxV = Math.max(maxV, Math.hypot(b.vx, b.vy));
       if (!Number.isFinite(b.x + b.y + b.vx + b.vy)) bad = 'NaN';
       else if (b.x < 0 || b.y < 0 || b.x > BOARD.w || b.y > BOARD.h) bad = '판 밖';
-      else if (planks.some((p) => insidePoly(b.x, b.y, p))) bad = '판자 뚫림';
+      else if (planks.some((p) => insidePoly(b.x, b.y, p))) bad = '블록 뚫림';
     }
   }
   return { w, ticks, bad, maxV };
